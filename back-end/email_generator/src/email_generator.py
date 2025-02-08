@@ -139,16 +139,3 @@ class EmailStyler:
         
         return humanized_email
 
-# Example usage:
-"""
-async def main():
-    styler = EmailStyler()
-    pdfs = ['sample1.pdf', 'sample2.pdf']
-    prompt = "Write an email to schedule a team meeting for next week"
-    email = await styler.generate_email(pdfs, prompt)
-    print(email)
-
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
-"""
