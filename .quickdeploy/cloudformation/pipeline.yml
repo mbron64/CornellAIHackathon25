@@ -1,0 +1,424 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: ''
+
+Parameters:
+
+    # Metadata Parameters
+
+  Application:
+    Default: ''
+    AllowedPattern: '[a-z0-9-]{1,10}'
+    Description: 'Name used for billing and other tracking/identification purposes'
+    Type: 'String'
+
+  Environment:
+    AllowedPattern: '[a-z0-9]{1,4}'
+    Description: 'Name of the deployment branch'
+    Type: 'String'
+  
+  RemoteGitRepository:
+    Default: 'cu-aaii/'
+    Description: 'The Organization/Name of the remote git repository'
+    Type: 'String'
+
+  SsmCodeStarConnectionArn:
+    Default: '/code-connections/cu-aaii'
+    Description: 'The name of the SSM Parameter containing the ARN for the CodeStar Connection with permission to clone the remote git repository'
+    Type: 'AWS::SSM::Parameter::Value<String>'
+
+Resources:
+
+  # Container Build
+
+  ContainerBuildRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub '${Application}-${Environment}-container-build'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Principal:
+              Service:
+                - !Sub 'codebuild.${AWS::URLSuffix}'
+            Action:
+              - 'sts:AssumeRole'
+      Policies:
+        - PolicyName: 'container-build'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: 'Allow'
+                Action:
+                  - 'codestar-connections:UseConnection'
+                Resource:
+                  - !Ref 'SsmCodeStarConnectionArn'
+              - Effect: 'Allow'
+                Action:
+                  - 'ecr:BatchGetImage'
+                  - 'ecr:BatchCheckLayerAvailability'
+                  - 'ecr:CompleteLayerUpload'
+                  - 'ecr:DescribeImages'
+                  - 'ecr:GetAuthorizationToken'
+                  - 'ecr:GetDownloadUrlForLayer'
+                  - 'ecr:InitiateLayerUpload'
+                  - 'ecr:PutImage'
+                  - 'ecr:UploadLayerPart'
+                Resource:
+                  - '*'
+              - Effect: 'Allow'
+                Action:
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${Application}-${Environment}-container*'
+              - Effect: 'Allow'
+                Action:
+                  - 's3:GetObject'
+                  - 's3:PutObject'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::deployment-artifacts-${AWS::AccountId}-*/*'
+      Tags:
+        - Key: 'Application'
+          Value: !Ref 'Application'
+        - Key: 'Environment'
+          Value: !Ref 'Environment'
+        - Key: 'Resource'
+          Value: 'iam-role-build-project-container-build'
+
+  ContainerRepository:
+    Type: 'AWS::ECR::Repository'
+    Properties:
+      RepositoryName: !Sub '${Application}-${Environment}'
+      ImageTagMutability: 'MUTABLE'
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |-
+          {
+            "rules": [
+              {
+                "action": {
+                  "type": "expire"
+                },
+                "selection": {
+                  "countType": "sinceImagePushed",
+                  "countUnit": "days",
+                  "countNumber": 1,
+                  "tagStatus": "untagged"
+                },
+                "description": "Expire Untagged Images",
+                "rulePriority": 1
+              },
+              {
+                "action": {
+                  "type": "expire"
+                },
+                "selection": {
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 3,
+                  "tagPrefixList": ["commit-"],
+                  "tagStatus": "tagged"
+                },
+                "description": "Expire >3 Commit Tags",
+                "rulePriority": 2
+              }
+            ]
+          }
+      RepositoryPolicyText:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Principal:
+              AWS:
+                - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action:
+              - 'ecr:GetDownloadUrlForLayer'
+              - 'ecr:BatchGetImage'
+              - 'ecr:BatchCheckLayerAvailability'
+          - Effect: 'Allow'
+            Principal:
+              AWS: !GetAtt 'ContainerBuildRole.Arn'
+            Action:
+              - 'ecr:BatchGetImage'
+              - 'ecr:BatchCheckLayerAvailability'
+              - 'ecr:CompleteLayerUpload'
+              - 'ecr:DescribeImages'
+              - 'ecr:GetDownloadUrlForLayer'
+              - 'ecr:InitiateLayerUpload'
+              - 'ecr:PutImage'
+              - 'ecr:UploadLayerPart'
+      Tags:
+        - Key: 'Application'
+          Value: !Ref 'Application'
+        - Key: 'Environment'
+          Value: !Ref 'Environment'
+        - Key: 'Resource'
+          Value: 'ecr-repository'
+
+  ContainerBuildLogs:
+    Type: 'AWS::Logs::LogGroup'
+    DeletionPolicy: 'Delete'
+    UpdateReplacePolicy: 'Delete'
+    Properties:
+      LogGroupName: !Sub '/aws/codebuild/${Application}-${Environment}-container'
+      Tags:
+        - Key: 'Application'
+          Value: !Ref 'Application'
+        - Key: 'Environment'
+          Value: !Ref 'Environment'
+        - Key: 'Resource'
+          Value: 'log-group-build-project-container'
+
+  ContainerBuildProject:
+    Type: 'AWS::CodeBuild::Project'
+    Properties:
+      Name: !Sub '${Application}-${Environment}-container'
+      Description: !Sub 'Builds the container image for the ${Application}-${Environment} pipeline'
+      # ConcurrentBuildLimit:
+      # QueuedTimeoutInMinutes:
+      # ResourceAccessRole:
+      ServiceRole: !GetAtt 'ContainerBuildRole.Arn'
+      TimeoutInMinutes: 60
+      Visibility: 'PRIVATE'
+      Artifacts:
+        Type: 'CODEPIPELINE'
+      Cache:
+        Type: 'NO_CACHE'
+      Environment:
+        ComputeType: 'BUILD_GENERAL1_SMALL'
+        Image: 'aws/codebuild/amazonlinux2-x86_64-standard:4.0'
+        ImagePullCredentialsType: 'CODEBUILD'
+        PrivilegedMode: true
+        Type: 'LINUX_CONTAINER'
+        EnvironmentVariables:
+          - Name: 'APPLICATION'
+            Value: !Ref 'Application'
+          - Name: 'ENVIRONMENT'
+            Value: !Ref 'Environment'
+          - Name: 'CONTAINER_REPOSITORY_URI'
+            Value: !Sub '${ContainerRepository.RepositoryUri}'
+          - Name: 'DOCKER_CLI_EXPERIMENTAL'
+            Value: 'enabled'
+      LogsConfig:
+        CloudWatchLogs:
+          GroupName: !Ref 'ContainerBuildLogs'
+          Status: 'ENABLED'
+        # S3Logs:
+      # SecondaryArtifacts:
+      # SecondarySourceVersions:
+      Source:
+        BuildSpec: '.quickdeploy/codebuild.yml'
+        GitCloneDepth: 0
+        Type: 'CODEPIPELINE'
+      Tags:
+        - Key: 'Application'
+          Value: !Ref 'Application'
+        - Key: 'Environment'
+          Value: !Ref 'Environment'
+        - Key: 'Resource'
+          Value: 'codebuild-project-container'
+
+  # Container Build Pipeline
+
+  BuildPipelineRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub '${Application}-${Environment}-${AWS::Region}-codepipeline'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Principal:
+              Service:
+                - !Sub 'codepipeline.${AWS::URLSuffix}'
+            Action:
+              - 'sts:AssumeRole'
+      Policies:
+        - PolicyName: 'codepipeline'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: 'Allow'
+                Action:
+                  - 'cloudformation:CreateStack'
+                  - 'cloudformation:DeleteStack'
+                  - 'cloudformation:DescribeStacks'
+                  - 'cloudformation:UpdateStack'
+                  - 'cloudformation:CreateChangeSet'
+                  - 'cloudformation:DeleteChangeSet'
+                  - 'cloudformation:DescribeChangeSet'
+                  - 'cloudformation:ExecuteChangeSet'
+                  - 'cloudformation:SetStackPolicy'
+                  - 'cloudformation:ValidateTemplate'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stack/${Application}-${Environment}*'
+              - Effect: 'Allow'
+                Action:
+                  - 'codebuild:BatchGetBuildBatches'
+                  - 'codebuild:BatchGetBuilds'
+                  - 'codebuild:StartBuild'
+                  - 'codebuild:StartBuildBatch'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:codebuild:*:${AWS::AccountId}:project/${Application}-${Environment}*'
+              - Effect: 'Allow'
+                Action:
+                  - 'codestar-connections:UseConnection'
+                Resource:
+                  - !Ref 'SsmCodeStarConnectionArn'
+              - Effect: 'Allow'
+                Action:
+                  - 'iam:PassRole'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cloudformation-deploy-role'
+              - Effect: 'Allow'
+                Action:
+                  - 's3:GetObject*'
+                  - 's3:GetReplicationConfiguration'
+                  - 's3:ListBucket'
+                  - 's3:PutObject*'
+                  - 's3:Replicate*'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::deployment-artifacts-${AWS::AccountId}-*'
+                  - !Sub 'arn:${AWS::Partition}:s3:::deployment-artifacts-${AWS::AccountId}-*/*'
+      Tags:
+        - Key: 'Application'
+          Value: !Ref 'Application'
+        - Key: 'Environment'
+          Value: !Ref 'Environment'
+        - Key: 'Resource'
+          Value: 'iam-role-build-pipeline'
+
+  BuildPipeline:
+    Type: 'AWS::CodePipeline::Pipeline'
+    Properties:
+      Name: !Sub '${Application}-${Environment}'
+      RestartExecutionOnUpdate: true
+      RoleArn: !GetAtt 'BuildPipelineRole.Arn'
+      ArtifactStores:
+        - Region: !Ref 'AWS::Region'
+          ArtifactStore:
+            Location: !Sub 'deployment-artifacts-${AWS::AccountId}-${AWS::Region}'
+            Type: 'S3'
+      Tags:
+        - Key: 'Application'
+          Value: !Ref 'Application'
+        - Key: 'Environment'
+          Value: !Ref 'Environment'
+        - Key: 'Resource'
+          Value: 'pipeline-build'
+      Stages:
+        - Name: 'Source'
+          Actions:
+            - Name: 'GitRepository'
+              Namespace: 'GitRepository'
+              OutputArtifacts:
+                - Name: 'GitRepositoryArtifact'
+              ActionTypeId:
+                Category: 'Source'
+                Owner: 'AWS'
+                Provider: 'CodeStarSourceConnection'
+                Version: '1'
+              Configuration:
+                ConnectionArn: !Ref 'SsmCodeStarConnectionArn'
+                BranchName: !Ref 'Environment'
+                FullRepositoryId: !Ref 'RemoteGitRepository'
+                OutputArtifactFormat: 'CODE_ZIP'
+                DetectChanges: 'true'
+        - Name: 'PipelineDeploy'
+          Actions:
+            - Name: 'PipelineCloudFormation'
+              Namespace: 'PipelineCloudFormation'
+              InputArtifacts:
+                - Name: 'GitRepositoryArtifact'
+              ActionTypeId:
+                Category: 'Deploy'
+                Owner: 'AWS'
+                Provider: 'CloudFormation'
+                Version: '1'
+              Configuration:
+                ActionMode: 'CREATE_UPDATE'
+                Capabilities: 'CAPABILITY_NAMED_IAM'
+                RoleArn: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cloudformation-deploy-role'
+                StackName: !Sub '${Application}-${Environment}-pipeline'
+                TemplatePath: 'GitRepositoryArtifact::.quickdeploy/cloudformation/pipeline.yml'
+                ParameterOverrides: !Sub >-
+                  {
+                  "Environment": "${Environment}"
+                  }
+        - Name: 'Build'
+          Actions:
+            - Name: 'StreamlitContainerBuild'
+              Namespace: 'StreamlitContainerBuild'
+              RunOrder: 1
+              InputArtifacts:
+                - Name: 'GitRepositoryArtifact'
+              ActionTypeId:
+                Category: 'Build'
+                Owner: 'AWS'
+                Provider: 'CodeBuild'
+                Version: '1'
+              Configuration:
+                BatchEnabled: false
+                PrimarySource: 'GitRepositoryArtifact'
+                ProjectName: !Ref 'ContainerBuildProject'
+                EnvironmentVariables: >-
+                  [{
+                  "name": "CONTAINER_TARGET",
+                  "value": "streamlit",
+                  "type": "PLAINTEXT"
+                  },
+                  {
+                  "name": "DATE_TAG",
+                  "value": "#{GitRepository.AuthorDate}",
+                  "type": "PLAINTEXT"
+                  }]
+            - Name: 'FastApiContainerBuild'
+              Namespace: 'FastApiContainerBuild'
+              RunOrder: 1
+              InputArtifacts:
+                - Name: 'GitRepositoryArtifact'
+              ActionTypeId:
+                Category: 'Build'
+                Owner: 'AWS'
+                Provider: 'CodeBuild'
+                Version: '1'
+              Configuration:
+                BatchEnabled: false
+                PrimarySource: 'GitRepositoryArtifact'
+                ProjectName: !Ref 'ContainerBuildProject'
+                EnvironmentVariables: >-
+                  [{
+                  "name": "CONTAINER_TARGET",
+                  "value": "fastapi",
+                  "type": "PLAINTEXT"
+                  },
+                  {
+                  "name": "DATE_TAG",
+                  "value": "#{GitRepository.AuthorDate}",
+                  "type": "PLAINTEXT"
+                  }]
+        - Name: 'ServiceDeploy'
+          Actions:
+            - Name: 'ServiceCloudFormation'
+              Namespace: 'ServiceCloudFormation'
+              RunOrder: 1
+              InputArtifacts:
+                - Name: 'GitRepositoryArtifact'
+              ActionTypeId:
+                Category: 'Deploy'
+                Owner: 'AWS'
+                Provider: 'CloudFormation'
+                Version: '1'
+              Configuration:
+                ActionMode: 'CREATE_UPDATE'
+                Capabilities: 'CAPABILITY_NAMED_IAM'
+                RoleArn: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cloudformation-deploy-role'
+                StackName: !Sub '${Application}-${Environment}-service'
+                TemplatePath: 'GitRepositoryArtifact::.quickdeploy/cloudformation/service.yml'
+                ParameterOverrides: !Sub >-
+                  {
+                  "Environment": "${Environment}",
+                  "FastApiContainerImageDigest": "#{FastApiContainerBuild.CONTAINER_DIGEST}",
+                  "StreamlitContainerImageDigest": "#{StreamlitContainerBuild.CONTAINER_DIGEST}"
+                  }

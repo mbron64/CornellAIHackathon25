@@ -1,0 +1,70 @@
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "cornell-ai-hackathon-2025"
+version = "0.1.0"
+description = "Streamlit app development environment for the 2025 Cornell AI Hackathon"
+authors = ["Marty Sullivan <marty@martysullivan.com>"]
+include = ["thisapp"]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+
+aioboto3 = "^12"
+aiofiles = "^24"
+aiohttp = "^3"
+accelerate = "^1"
+albumentations = "^2"
+bokeh = "^3"
+cartopy = "^0.24"
+chromadb = "^0.6"
+dask = "^2025.1"
+diffusers = "^0.32"
+gdal = "3.6.2"
+geopandas = "^1"
+langchain = "^0.3"
+langchain-community = "^0.3"
+langgraph = "^0.2"
+lightgbm = "^4"
+llama-index = "^0.12"
+matplotlib = "^3"
+mediapipe = "^0.10"
+neo4j = "^5"
+openai = "^1"
+opencv-python-headless = "^4"
+poetry = "^1.8"
+pydantic = "^2"
+pymupdf4llm = "0.0.17"
+python-dotenv = "^1.0"
+pytorch-lightning = "^2"
+ray = "^2"
+s3fs = "2025.2.0"
+scikit-learn = "^1"
+seaborn = "^0.13"
+torch = "2.6.0"
+transformers = "^4"
+xgboost = "^2"
+
+fastapi = { version = "^0.115", optional = true }
+streamlit = { version = "^1", optional = true }
+
+[tool.poetry.extras]
+
+fastapi = [
+    "aioboto3",
+    "aiofiles",
+    "fastapi",
+    "openai",
+]
+
+streamlit = [
+    "streamlit",
+]
+
+[tool.poetry.group.dev.dependencies]
+cfn_flip = "*"
+cfn-lint = "*"
+ipykernel = "*"
+ipywidgets = "*"

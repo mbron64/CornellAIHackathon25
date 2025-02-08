@@ -1,0 +1,68 @@
+services:
+  
+  neo4j:
+    container_name: hackathon-neo4j
+    command: ['neo4j']
+    image: public.ecr.aws/docker/library/neo4j:5-bullseye
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: 'neo4j/secretpassword'
+    volumes:
+      - './neo4j/data:/data'
+
+  streamlit:
+    container_name: hackathon-streamlit
+    command: ['--server.runOnSave', 'true']
+    build:
+      dockerfile: Dockerfile
+      target: streamlit
+    depends_on:
+      - fastapi
+      - neo4j
+    ports:
+      - "8501:8501"
+    environment:
+      APPLICATION: 'cornell-ai-hackathon-2025'
+      AWS_ENDPOINT_URL_DYNAMODB: 'http://dynamodb:8000/'
+      AWS_PROFILE: 'cornell-ai-hackathon-2025'
+    volumes:
+      - '$HOME/.aws:/home/streamlit/.aws'
+      - './streamlit-app:/code'
+      - './thisapp:/code/thisapp'
+      - '${PWD}/.env:/code/.env'
+
+  fastapi:
+    container_name: hackathon-fastapi
+    command: ['--reload']
+    build:
+      dockerfile: Dockerfile
+      target: fastapi
+    depends_on:
+      - neo4j
+    ports:
+      - "8000:8000"
+    environment:
+      APPLICATION: 'cornell-ai-hackathon-2025'
+      AWS_PROFILE: 'cornell-ai-hackathon-2025'
+    volumes:
+      - '${HOME}/.aws:/root/.aws'
+      - './fastapi-app:/code'
+      - './thisapp:/code/thisapp'
+      - '${PWD}/.env:/code/.env'
+
+  devcontainer:
+    container_name: hackathon-devcontainer
+    build:
+      dockerfile: Dockerfile
+      target: devcontainer
+    environment:
+      APPLICATION: 'cornell-ai-hackathon-2025'
+      AWS_ENDPOINT_URL_DYNAMODB: 'http://dynamodb:8000/'
+      AWS_PROFILE: 'cornell-ai-hackathon-2025'
+    volumes:
+      - '/var/run/docker.sock:/var/run/docker.sock'
+      - '${HOME}/.aws:/root/.aws'
+      - '.:/code'
+      - '.:/workspace'

@@ -1,0 +1,29 @@
+version: 0.2
+
+env:
+  git-credential-helper: 'yes'
+  exported-variables:
+    - 'CONTAINER_DIGEST'
+
+phases:
+
+  pre_build:
+    on-failure: 'ABORT'
+    commands:
+      - 'aws ecr get-login-password | docker login --username AWS --password-stdin $(aws sts get-caller-identity --query Account --output text).dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com'
+
+  build:
+    on-failure: 'ABORT'
+    commands:
+      - 'DATE_TAG=$(echo "$DATE_TAG" | tr ":" "-")'
+      - >-
+        docker build $CODEBUILD_SRC_DIR
+        --target $CONTAINER_TARGET
+        --pull
+        --tag "$CONTAINER_REPOSITORY_URI:$CONTAINER_TARGET-$DATE_TAG"
+
+  post_build:
+    on-failure: 'ABORT'
+    commands:
+      - 'docker push "$CONTAINER_REPOSITORY_URI:$CONTAINER_TARGET-$DATE_TAG"'
+      - "export CONTAINER_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' $CONTAINER_REPOSITORY_URI:$CONTAINER_TARGET-$DATE_TAG)"

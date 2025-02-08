@@ -1,0 +1,654 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: ''
+
+Parameters:
+
+    # Metadata Parameters
+
+  Application:
+    Default: ''
+    AllowedPattern: '[a-z0-9-]{1,10}'
+    Description: 'Name used for billing and other tracking/identification purposes'
+    Type: 'String'
+
+  # DNS Related Parameters
+
+  SubDomainName:
+    Default: ''
+    Description: 'The subdomain name to use for the hosted zone'
+    Type: 'String'
+
+  RootDomainName:
+    Default: 'ai-lab.cucloud.net'
+    Description: 'The root domain name to use for the hosted zone'
+    Type: 'String'
+
+  HostedZoneId:
+    Default: 'Z0444591MO5L8ZV7QROU'
+    Description: 'The Hosted Zone ID to use in this account'
+    Type: 'String'
+
+  # VPC Related Parameters
+
+  VpcId:
+    Default: 'vpc-017b553bcf68efdf7'
+    Description: 'The VPC ID to use for the Application Load Balancer'
+    Type: 'String'
+  
+  SubnetIds:
+    Default: 'subnet-0fb2bd84424ae908d,subnet-00673ea719689734f'
+    Description: 'The Subnet IDs to use for the Application Load Balancer'
+    Type: 'List<String>'
+
+  # OIDC Parameters
+
+  # Need to create corresponding SSM parameters for the following (e.g. parameter named /oidc-client-secret/${OidcClientId})
+
+  OidcClientId:
+    Default: ''
+    Description: 'The OIDC Client ID'
+    Type: 'String'
+  
+  ## The following OIDC params should apply to all Cornell Ithaca Azure Tenant Applications
+
+  OidcAuthorizationEndpoint:
+    Default: 'https://login.microsoftonline.com/5d7e4366-1b9b-45cf-8e79-b14b27df46e1/oauth2/v2.0/authorize'
+    Description: 'The OIDC Authorization Endpoint'
+    Type: 'String'
+
+  OidcIssuer:
+    Default: 'https://login.microsoftonline.com/5d7e4366-1b9b-45cf-8e79-b14b27df46e1/v2.0'
+    Description: 'The OIDC Issuer'
+    Type: 'String'
+  
+  OidcTokenEndpoint:
+    Default: 'https://login.microsoftonline.com/5d7e4366-1b9b-45cf-8e79-b14b27df46e1/oauth2/v2.0/token'
+    Description: 'The OIDC Token Endpoint'
+    Type: 'String'
+  
+  OidcUserInfoEndpoint:
+    Default: 'https://graph.microsoft.com/oidc/userinfo'
+    Description: 'The OIDC UserInfo Endpoint'
+    Type: 'String'
+
+  # Pipeline Provided Parameters
+
+  Environment:
+    AllowedPattern: '[a-z0-9-]{1,4}'
+    Description: 'Name of the deployment branch'
+    Type: 'String'
+  
+  FastApiContainerImageDigest:
+    Description: 'The digest of the fastapi container image to deploy'
+    Type: 'String'
+
+  StreamlitContainerImageDigest:
+    Description: 'The digest of the streamlit container image to deploy'
+    Type: 'String'
+
+Conditions:
+
+    IsMainBranch: !Equals
+        - !Ref 'Environment'
+        - 'main'
+
+Mappings:
+  
+  RegionMap:
+    us-east-1:
+      ElbAccountId: '127311923021'
+    us-east-2:
+      ElbAccountId: '033677994240'
+    us-west-1:
+      ElbAccountId: '027434742980'
+    us-west-2:
+      ElbAccountId: '797873946194'
+
+Resources:
+
+  # Load Balancer
+
+  ApplicationLoadBalancerLogsBucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Sub '${Application}-${Environment}-${AWS::Region}-${AWS::AccountId}-alb-logs'
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: 'BucketOwnerEnforced'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: 'Application'
+          Value: !Ref 'Application'
+        - Key: 'Environment'
+          Value: !Ref 'Environment'
+        - Key: 'Resource'
+          Value: 's3-bucket-alb-logs'
+    
+  ApplicationLoadBalancerLogsBucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket: !Ref 'ApplicationLoadBalancerLogsBucket'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Principal:
+              AWS: !Sub 
+                - 'arn:${AWS::Partition}:iam::${ElbAccountId}:root'
+                - ElbAccountId: !FindInMap [ 'RegionMap', !Ref 'AWS::Region', 'ElbAccountId' ]
+            Action: 
+              - 's3:PutObject'
+            Resource: 
+              - !Sub '${ApplicationLoadBalancerLogsBucket.Arn}/*'
+
+  ApplicationLoadBalancerCertificate:
+    Type: 'AWS::CertificateManager::Certificate'
+    Properties:
+      DomainName: !If
+        - 'IsMainBranch'
+        - !Sub '${SubDomainName}.${RootDomainName}'
+        - !Sub '${SubDomainName}-${Environment}.${RootDomainName}'
+      ValidationMethod: 'DNS'
+      DomainValidationOptions:
+        - DomainName: !Ref 'RootDomainName'
+          HostedZoneId: !Ref 'HostedZoneId'
+      Tags:
+        - Key: 'Application'
+          Value: !Ref 'Application'
+        - Key: 'Environment'
+          Value: !Ref 'Environment'
+        - Key: 'Resource'
+          Value: 'acm-certificate-alb'
+
+  ApplicationLoadBalancerSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: !Sub '${Application}-${Environment}-alb'
+      GroupDescription: 'HTTPS'
+      VpcId: !Ref 'VpcId'
+      SecurityGroupIngress:
+        - CidrIp: '0.0.0.0/0'
+          IpProtocol: 'tcp'
+          FromPort: '80'
+          ToPort: '80'
+        - CidrIpv6: '::/0'
+          IpProtocol: 'tcp'
+          FromPort: '80'
+          ToPort: '80'
+        - CidrIp: '0.0.0.0/0'
+          IpProtocol: 'tcp'
+          FromPort: '443'
+          ToPort: '443'
+        - CidrIpv6: '::/0'
+          IpProtocol: 'tcp'
+          FromPort: '443'
+          ToPort: '443'
+      Tags:
+        - Key: 'Application'
+          Value: !Ref 'Application'
+        - Key: 'Environment'
+          Value: !Ref 'Environment'
+        - Key: 'Resource'
+          Value: 'security-group-alb'
+        - Key: 'Name'
+          Value: !Sub '${Application}-${Environment}-alb'
+
+  ApplicationLoadBalancer:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    DependsOn:
+      - 'ApplicationLoadBalancerLogsBucketPolicy'
+    Properties:
+      Name: !Sub '${Application}-${Environment}'
+      # IpAddressType: 'dualstack'
+      IpAddressType: 'ipv4'
+      Scheme: 'internet-facing'
+      Type: 'application'
+      LoadBalancerAttributes:
+        - Key: 'deletion_protection.enabled'
+          Value: 'false'
+        - Key: 'access_logs.s3.enabled'
+          Value: 'true'
+        - Key: 'access_logs.s3.bucket'
+          Value: !Ref 'ApplicationLoadBalancerLogsBucket'
+        - Key: 'access_logs.s3.prefix'
+          Value: 'alb'
+        - Key: 'idle_timeout.timeout_seconds'
+          Value: '60'
+        - Key: 'routing.http.desync_mitigation_mode'
+          Value: 'defensive'
+        - Key: 'routing.http.drop_invalid_header_fields.enabled'
+          Value: 'false'
+        - Key: 'routing.http.xff_client_port.enabled'
+          Value: 'false'
+        - Key: 'routing.http2.enabled'
+          Value: 'true'
+        - Key: 'waf.fail_open.enabled'
+          Value: 'false'
+      SecurityGroups:
+        - !GetAtt 'ApplicationLoadBalancerSecurityGroup.GroupId'
+      Subnets: !Ref 'SubnetIds'
+      Tags:
+        - Key: 'Application'
+          Value: !Ref 'Application'
+        - Key: 'Environment'
+          Value: !Ref 'Environment'
+        - Key: 'Resource'
+          Value: 'application-load-balancer'
+
+  ApplicationLoadBalancerHttpListener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      LoadBalancerArn: !Ref 'ApplicationLoadBalancer'
+      Port: 80
+      Protocol: 'HTTP'
+      DefaultActions:
+        - Type: 'redirect'
+          RedirectConfig:
+            Host: '#{host}'
+            Path: '/#{path}'
+            Port: '443'
+            Protocol: 'HTTPS'
+            Query: '#{query}'
+            StatusCode: 'HTTP_301'
+  
+  ApplicationLoadBalancerHttpsListener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      LoadBalancerArn: !Ref 'ApplicationLoadBalancer'
+      Port: 443
+      Protocol: 'HTTPS'
+      SslPolicy: 'ELBSecurityPolicy-TLS13-1-2-2021-06'
+      Certificates:
+        - CertificateArn: !Ref 'ApplicationLoadBalancerCertificate'
+      DefaultActions:
+        - Type: 'fixed-response'
+          FixedResponseConfig:
+            ContentType: 'application/json'
+            MessageBody: '{"Error":"Not Found"}'
+            StatusCode: '404'
+
+  ApplicationLoadBalancerRecordSets:
+    Type: 'AWS::Route53::RecordSetGroup'
+    Properties:
+      Comment: !Sub '${Application}-${Environment}-alb'
+      HostedZoneId: !Ref 'HostedZoneId'
+      RecordSets:
+        - Name: !If
+            - 'IsMainBranch'
+            - !Sub '${SubDomainName}.${RootDomainName}'
+            - !Sub '${SubDomainName}-${Environment}.${RootDomainName}'
+          Type: 'A'
+          AliasTarget:
+            DNSName: !GetAtt 'ApplicationLoadBalancer.DNSName'
+            HostedZoneId: !GetAtt 'ApplicationLoadBalancer.CanonicalHostedZoneID'
+            EvaluateTargetHealth: false
+
+# ECS Cluster
+
+  EcsSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: !Sub '${Application}-${Environment}-ecs'
+      GroupDescription: 'ECS Instances'
+      VpcId: !Ref 'VpcId'
+      SecurityGroupIngress:
+        - FromPort: 0
+          ToPort: 65535
+          IpProtocol: 'tcp'
+          SourceSecurityGroupId: !GetAtt 'ApplicationLoadBalancerSecurityGroup.GroupId'
+      Tags:
+        - Key: 'Application'
+          Value: !Ref 'Application'
+        - Key: 'Environment'
+          Value: !Ref 'Environment'
+        - Key: 'Resource'
+          Value: 'security-group-ecs'
+        - Key: 'Name'
+          Value: !Sub '${Application}-${Environment}-ecs'
+
+  EcsCluster:
+    Type: 'AWS::ECS::Cluster'
+    Properties:
+      ClusterName: !Sub '${Application}-${Environment}'
+      CapacityProviders:
+        - 'FARGATE'
+      ClusterSettings:
+        - Name: 'containerInsights'
+          Value: 'enabled'
+      # Configuration:
+      # DefaultCapacityProviderStrategy:
+      # ServiceConnectDefaults:
+      Tags:
+        - Key: 'Application'
+          Value: !Ref 'Application'
+        - Key: 'Environment'
+          Value: !Ref 'Environment'
+        - Key: 'Resource'
+          Value: 'ecs-cluster'
+
+  FastApiLogGroup:
+    Type: 'AWS::Logs::LogGroup'
+    DeletionPolicy: 'Delete'
+    UpdateReplacePolicy: 'Delete'
+    Properties:
+      LogGroupName: !Sub '/${Application}/${Environment}/ecs-fastapi'
+      # KmsKeyId: !GetAtt 'ApplicationKmsKey.Arn'
+      # RetentionInDays: 14
+      Tags:
+        - Key: 'Application'
+          Value: !Ref 'Application'
+        - Key: 'Environment'
+          Value: !Ref 'Environment'
+        - Key: 'Resource'
+          Value: 'log-group-ecs-fastapi'
+
+  StreamlitLogGroup:
+    Type: 'AWS::Logs::LogGroup'
+    DeletionPolicy: 'Delete'
+    UpdateReplacePolicy: 'Delete'
+    Properties:
+      LogGroupName: !Sub '/${Application}/${Environment}/ecs-streamlit'
+      # KmsKeyId: !GetAtt 'ApplicationKmsKey.Arn'
+      # RetentionInDays: 14
+      Tags:
+        - Key: 'Application'
+          Value: !Ref 'Application'
+        - Key: 'Environment'
+          Value: !Ref 'Environment'
+        - Key: 'Resource'
+          Value: 'log-group-ecs-streamlit'
+
+  EcsTaskExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub '${Application}-${Environment}-${AWS::Region}-ecs-task-execution'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Action: 'sts:AssumeRole'
+            Principal:
+              Service: !Sub 'ecs-tasks.${AWS::URLSuffix}'
+      Policies:
+        - PolicyName: 'ecs-task-execution'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: 'Allow'
+                Action:
+                  - 'ecr:GetAuthorizationToken'
+                  - 'ecr:BatchCheckLayerAvailability'
+                  - 'ecr:GetDownloadUrlForLayer'
+                  - 'ecr:BatchGetImage'
+                Resource:
+                  - '*'
+              - Effect: 'Allow'
+                Action:
+                  - 'ssm:GetParameters'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${Application}/${Environment}/*'
+              - Effect: 'Allow'
+                Action:
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource:
+                  - !GetAtt 'FastApiLogGroup.Arn'
+                  - !GetAtt 'StreamlitLogGroup.Arn'
+      Tags:
+        - Key: 'Application'
+          Value: !Ref 'Application'
+        - Key: 'Environment'
+          Value: !Ref 'Environment'
+        - Key: 'Resource'
+          Value: 'role-ecs-task-execution'
+
+  EcsTaskRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub '${Application}-${Environment}-${AWS::Region}-ecs-task'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Action: 'sts:AssumeRole'
+            Principal:
+              Service: !Sub 'ecs-tasks.${AWS::URLSuffix}'
+      Policies:
+        - PolicyName: 'ecs-task'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: 'Allow'
+                Action:
+                  - 's3:GetObject'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::datasets-${AWS::AccountId}-${AWS::Region}/${Application}/*'
+              - Effect: 'Allow'
+                Action:
+                  - 's3:ListBucket'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::datasets-${AWS::AccountId}-${AWS::Region}'
+                Condition:
+                  StringLike:
+                    's3:prefix': !Sub '${Application}/*'
+              - Effect: 'Allow'
+                Action:
+                  - 'secretsmanager:GetSecretValue'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${Application}-*'
+              - Effect: 'Allow'
+                Action:
+                  - 'ssmmessages:CreateControlChannel'
+                  - 'ssmmessages:CreateDataChannel'
+                  - 'ssmmessages:OpenControlChannel'
+                  - 'ssmmessages:OpenDataChannel'
+                Resource:
+                  - '*'
+      Tags:
+        - Key: 'Application'
+          Value: !Ref 'Application'
+        - Key: 'Environment'
+          Value: !Ref 'Environment'
+        - Key: 'Resource'
+          Value: 'role-ecs-task'
+
+  StreamlitAlbTargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: !Sub '${Application}-${Environment}-streamlit'
+      HealthCheckEnabled: true
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: '/'
+      HealthCheckPort: 'traffic-port'
+      HealthCheckProtocol: 'HTTP'
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      IpAddressType: 'ipv4'
+      Port: 8501
+      Protocol: 'HTTP'
+      ProtocolVersion: 'HTTP1'
+      TargetType: 'ip'
+      UnhealthyThresholdCount: 2
+      VpcId: !Ref 'VpcId'
+      Matcher:
+        HttpCode: '200'
+      Tags:
+        - Key: 'Application'
+          Value: !Ref 'Application'
+        - Key: 'Environment'
+          Value: !Ref 'Environment'
+        - Key: 'Resource'
+          Value: 'target-group-streamlit'
+      TargetGroupAttributes:
+        - Key: 'deregistration_delay.timeout_seconds'
+          Value: '60'
+        - Key: 'load_balancing.algorithm.type'
+          Value: 'round_robin'
+        - Key: 'slow_start.duration_seconds'
+          Value: '0'
+        - Key: 'stickiness.enabled'
+          Value: 'true'
+
+  StreamlitAlbListenerRule:
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      ListenerArn: !Ref 'ApplicationLoadBalancerHttpsListener'
+      Priority: 100
+      Actions:
+        - Order: 50
+          Type: 'authenticate-oidc'
+          AuthenticateOidcConfig:
+            AuthorizationEndpoint: !Ref 'OidcAuthorizationEndpoint'
+            ClientId: !Ref 'OidcClientId'
+            ClientSecret: !Sub '{{resolve:ssm:/oidc-client-secret/${OidcClientId}}}'
+            Issuer: !Ref 'OidcIssuer'
+            OnUnauthenticatedRequest: 'authenticate'
+            Scope: 'openid'
+            SessionCookieName: !Sub '${Application}-${Environment}-oidc-session'
+            SessionTimeout: 86400
+            TokenEndpoint: !Ref 'OidcTokenEndpoint'
+            UserInfoEndpoint: !Ref 'OidcUserInfoEndpoint'
+        - Order: 100
+          Type: 'forward'
+          TargetGroupArn: !Ref 'StreamlitAlbTargetGroup'
+      Conditions:
+        - Field: 'host-header'
+          HostHeaderConfig:
+            Values:
+              - !If
+                - 'IsMainBranch'
+                - !Sub '${SubDomainName}.${RootDomainName}'
+                - !Sub '${SubDomainName}-${Environment}.${RootDomainName}'
+
+  StreamlitServiceTaskDefinition:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      Cpu: 1024
+      ExecutionRoleArn: !GetAtt 'EcsTaskExecutionRole.Arn'
+      Family: !Sub '${Application}-${Environment}-streamlit-service'
+      Memory: 2048
+      NetworkMode: 'awsvpc'
+      TaskRoleArn: !GetAtt 'EcsTaskRole.Arn'
+      ContainerDefinitions:
+        - Name: 'fastapi'
+          Essential: true
+          Image: !Ref 'FastApiContainerImageDigest'
+          Interactive: false
+          PseudoTerminal: false
+          ReadonlyRootFilesystem: false
+          Environment:
+            - Name: 'APPLICATION'
+              Value: !Ref 'Application'
+            - Name: 'ENVIRONMENT'
+              Value: !Ref 'Environment'
+            - Name: 'AWS_REGION'
+              Value: !Ref 'AWS::Region'
+            - Name: 'AWS_DEFAULT_REGION'
+              Value: !Ref 'AWS::Region'
+          HealthCheck:
+            Command:
+              - 'CMD-SHELL'
+              - 'curl -f http://localhost:8000/health || exit 1'
+            Interval: 30
+            Retries: 3
+            StartPeriod: 60
+            Timeout: 5
+          LogConfiguration:
+            LogDriver: 'awslogs'
+            Options:
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-group: !Ref 'FastApiLogGroup'
+              awslogs-stream-prefix: 'fastapi'
+          PortMappings:
+            - ContainerPort: 8000
+              HostPort: 8000
+              Protocol: 'tcp'
+        - Name: 'streamlit'
+          Essential: true
+          Image: !Ref 'StreamlitContainerImageDigest'
+          Interactive: false
+          PseudoTerminal: false
+          ReadonlyRootFilesystem: false
+          Environment:
+            - Name: 'APPLICATION'
+              Value: !Ref 'Application'
+            - Name: 'ENVIRONMENT'
+              Value: !Ref 'Environment'
+            - Name: 'AWS_REGION'
+              Value: !Ref 'AWS::Region'
+            - Name: 'AWS_DEFAULT_REGION'
+              Value: !Ref 'AWS::Region'
+          HealthCheck:
+            Command:
+              - 'CMD-SHELL'
+              - 'curl -f http://localhost:8501/healthz || exit 1'
+            Interval: 30
+            Retries: 3
+            StartPeriod: 60
+            Timeout: 5
+          LogConfiguration:
+            LogDriver: 'awslogs'
+            Options:
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-group: !Ref 'StreamlitLogGroup'
+              awslogs-stream-prefix: 'streamlit'
+          PortMappings:
+            - ContainerPort: 8501
+              HostPort: 8501
+              Protocol: 'tcp'
+      RequiresCompatibilities:
+        - 'FARGATE'
+      RuntimePlatform:
+        CpuArchitecture: 'X86_64'
+        OperatingSystemFamily: 'LINUX'
+      Tags:
+        - Key: 'Application'
+          Value: !Ref 'Application'
+        - Key: 'Environment'
+          Value: !Ref 'Environment'
+        - Key: 'Resource'
+          Value: 'ecs-task-definition-streamlit'
+
+  StreamlitService:
+    Type: 'AWS::ECS::Service'
+    DependsOn:
+      - 'StreamlitAlbListenerRule'
+    Properties:
+      ServiceName: !Sub '${Application}-${Environment}-streamlit'
+      Cluster: !Ref 'EcsCluster'
+      DesiredCount: 1
+      EnableECSManagedTags: true
+      EnableExecuteCommand: true
+      HealthCheckGracePeriodSeconds: 5
+      LaunchType: 'FARGATE'
+      PropagateTags: 'SERVICE'
+      SchedulingStrategy: 'REPLICA'
+      TaskDefinition: !Ref 'StreamlitServiceTaskDefinition'
+      # CapacityProviderStrategy:
+      # DeploymentConfiguration:
+      DeploymentController:
+        Type: 'ECS'
+      LoadBalancers:
+        - ContainerName: 'streamlit'
+          ContainerPort: 8501
+          TargetGroupArn: !Ref 'StreamlitAlbTargetGroup'
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: 'ENABLED'
+          SecurityGroups:
+            - !GetAtt 'EcsSecurityGroup.GroupId'
+          Subnets: !Ref 'SubnetIds'
+      # PlacementConstraints:
+      # PlacementStrategies:
+      # ServiceRegistries:
+      Tags:
+        - Key: 'Application'
+          Value: !Ref 'Application'
+        - Key: 'Environment'
+          Value: !Ref 'Environment'
+        - Key: 'Resource'
+          Value: 'ecs-service-streamlit'
