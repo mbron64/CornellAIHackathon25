@@ -1,45 +1,34 @@
 print("Running updated version")
 import streamlit as st
 from langchain_openai.chat_models import ChatOpenAI
-import os
-from dotenv import load_dotenv
-from pathlib import Path
 
-# Get the directory containing this file
-current_dir = Path(__file__).parent
-# Go up one level to the project root
-project_root = current_dir.parent
-# Load .env from project root
-env_path = project_root / '.env'
-print(f"Looking for .env at: {env_path}")
-print(f"File exists: {env_path.exists()}")
-load_dotenv(env_path)
+st.title("VECTOR APP v2")
 
-# Load environment variables and print for debugging
-print(f"API Key: {os.getenv('OPENAI_API_KEY')}")
-print(f"Base URL: {os.getenv('OPENAI_BASE_URL')}")
+# Initialize chat history
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-st.title("VECTOR APP v3")
+openai_api_key = st.sidebar.text_input("OpenAI API Key", type="password")
 
-# Get API key and base URL from environment variables
-api_key = os.getenv("OPENAI_API_KEY")
-base_url = os.getenv("OPENAI_BASE_URL")
+# Display chat messages from history on app rerun
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
-def generate_response(input_text):
-    model = ChatOpenAI(
-        temperature=0.7,
-        api_key=api_key,
-        base_url=base_url
-    )
-    st.info(model.invoke(input_text))
-
-with st.form("my_form"):
-    text = st.text_area(
-        "Enter text:",
-        "What are the three key pieces of advice for learning how to code?",
-    )
-    submitted = st.form_submit_button("Submit")
-    if not api_key:
-        st.warning("OpenAI API key not found in environment variables!", icon="⚠")
-    if submitted and api_key:
-        generate_response(text)
+# Accept user input
+if prompt := st.chat_input("What is up?"):
+    # Add user message to chat history
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    # Display user message in chat message container
+    with st.chat_message("user"):
+        st.markdown(prompt)
+    
+    # Generate and display assistant response
+    if not openai_api_key.startswith("sk-"):
+        st.warning("Please enter your OpenAI API key!", icon="⚠")
+    else:
+        with st.chat_message("assistant"):
+            model = ChatOpenAI(temperature=0.7, api_key=openai_api_key)
+            response = model.invoke(prompt)
+            st.markdown(response.content)
+            st.session_state.messages.append({"role": "assistant", "content": response.content})
