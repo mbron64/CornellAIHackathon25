@@ -116,7 +116,7 @@ headless = true
 
 # Automatically rerun script when the file is modified on disk.
 # Default: false
-runOnSave = false
+runOnSave = true
 
 # The address where the server will listen for client and browser
 # connections. Use this if you want to bind the server to a specific address.
