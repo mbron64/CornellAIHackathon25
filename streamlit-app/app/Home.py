@@ -26,45 +26,83 @@ import time
 
 # Load environment variables and secrets
 def load_secrets():
-    """Load secrets from Streamlit secrets or environment variables"""
-    secrets = {}
-    
-    # First try loading from .env file
-    load_dotenv()
-    
-    # Define required secrets
-    required_secrets = {
-        "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY"),
-        "OPENAI_BASE_URL": os.getenv("OPENAI_BASE_URL", "https://api.ai.it.cornell.edu/"),
-        "PINECONE_API_KEY": os.getenv("PINECONE_API_KEY"),
-        "PINECONE_ENV": os.getenv("PINECONE_ENV", "us-east1-gcp"),
-        "PINECONE_INDEX_NAME": os.getenv("PINECONE_INDEX_NAME", "cornell-ai-hackathon-2025"),
-        "AI_HUMANIZER_EMAIL": os.getenv("AI_HUMANIZER_EMAIL"),
-        "AI_HUMANIZER_PASSWORD": os.getenv("AI_HUMANIZER_PASSWORD")
-    }
-    
-    # Try to get values from Streamlit secrets if available
+    """Load secrets from Streamlit secrets with proper section handling"""
     try:
-        for key in required_secrets:
-            # Try Streamlit secrets first, then fall back to environment variable
-            secrets[key] = st.secrets.get(key, required_secrets[key])
-    except Exception:
-        # If Streamlit secrets fail, use the environment variables we loaded
-        secrets = required_secrets
-    
-    # Set environment variables and validate
-    missing_secrets = []
-    for key, value in secrets.items():
-        if value:
-            os.environ[key] = value
-        else:
-            missing_secrets.append(key)
-    
-    if missing_secrets:
-        st.error("⚠️ Missing required secrets:")
-        for key in missing_secrets:
-            st.error(f"- {key}")
-        st.info("Please make sure these secrets are set in .streamlit/secrets.toml or as environment variables.")
+        # Map section-based secrets to environment variables
+        secrets_mapping = {
+            "OPENAI_API_KEY": ("openai", "api_key"),
+            "OPENAI_BASE_URL": ("openai", "base_url"),
+            "PINECONE_API_KEY": ("pinecone", "api_key"),
+            "PINECONE_ENV": ("pinecone", "environment"),
+            "PINECONE_INDEX_NAME": ("pinecone", "index_name"),
+            "AI_HUMANIZER_EMAIL": ("humanizer", "email"),
+            "AI_HUMANIZER_PASSWORD": ("humanizer", "password")
+        }
+        
+        # Default values for non-critical secrets
+        default_values = {
+            "OPENAI_BASE_URL": "https://api.ai.it.cornell.edu/",
+            "PINECONE_ENV": "us-east1-gcp",
+            "PINECONE_INDEX_NAME": "cornell-ai-hackathon-2025"
+        }
+        
+        # Load secrets and set environment variables
+        secrets = {}
+        missing_secrets = []
+        
+        for env_var, (section, key) in secrets_mapping.items():
+            try:
+                # Try to get from Streamlit secrets first
+                value = st.secrets[section][key]
+                secrets[env_var] = value
+                os.environ[env_var] = value
+            except (KeyError, FileNotFoundError) as e:
+                # If not in Streamlit secrets, try environment variable
+                env_value = os.getenv(env_var)
+                if env_value:
+                    secrets[env_var] = env_value
+                    os.environ[env_var] = env_value
+                elif env_var in default_values:
+                    # Use default value if available
+                    secrets[env_var] = default_values[env_var]
+                    os.environ[env_var] = default_values[env_var]
+                else:
+                    missing_secrets.append(env_var)
+        
+        if missing_secrets:
+            st.error("⚠️ Missing required secrets:")
+            for secret in missing_secrets:
+                st.error(f"- {secret}")
+            st.info("""
+            Please set up your secrets using one of these methods:
+            1. Create a .streamlit/secrets.toml file with the following structure:
+               ```toml
+               [openai]
+               api_key = "your-api-key"
+               base_url = "https://api.ai.it.cornell.edu/"
+               
+               [pinecone]
+               api_key = "your-pinecone-key"
+               environment = "us-east1-gcp"
+               index_name = "cornell-ai-hackathon-2025"
+               
+               [humanizer]
+               email = "your-email"
+               password = "your-password"
+               ```
+            2. Set environment variables for each missing secret
+            3. Use Streamlit Cloud's secrets management console when deploying
+            """)
+            st.stop()
+        
+        return secrets
+        
+    except Exception as e:
+        st.error(f"Error loading secrets: {str(e)}")
+        st.info("""
+        Please make sure your secrets are properly configured.
+        See https://docs.streamlit.io/streamlit-community-cloud/deploy-your-app/secrets-management for more information.
+        """)
         st.stop()
 
 # Load secrets at startup
