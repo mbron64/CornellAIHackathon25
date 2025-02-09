@@ -27,37 +27,45 @@ import time
 # Load environment variables and secrets
 def load_secrets():
     """Load secrets from Streamlit secrets or environment variables"""
-    try:
-        # Try to load from Streamlit secrets
-        secrets = {
-            "OPENAI_API_KEY": st.secrets["OPENAI_API_KEY"],
-            "OPENAI_BASE_URL": st.secrets["OPENAI_BASE_URL"],
-            "PINECONE_API_KEY": st.secrets["PINECONE_API_KEY"],
-            "PINECONE_ENV": st.secrets["PINECONE_ENV"],
-            "PINECONE_INDEX_NAME": st.secrets["PINECONE_INDEX_NAME"],
-            "AI_HUMANIZER_EMAIL": st.secrets["AI_HUMANIZER_EMAIL"],
-            "AI_HUMANIZER_PASSWORD": st.secrets["AI_HUMANIZER_PASSWORD"]
-        }
-    except (FileNotFoundError, KeyError):
-        # If Streamlit secrets fail, try loading from .env
-        load_dotenv()
-        secrets = {
-            "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY"),
-            "OPENAI_BASE_URL": os.getenv("OPENAI_BASE_URL"),
-            "PINECONE_API_KEY": os.getenv("PINECONE_API_KEY"),
-            "PINECONE_ENV": os.getenv("PINECONE_ENV"),
-            "PINECONE_INDEX_NAME": os.getenv("PINECONE_INDEX_NAME"),
-            "AI_HUMANIZER_EMAIL": os.getenv("AI_HUMANIZER_EMAIL"),
-            "AI_HUMANIZER_PASSWORD": os.getenv("AI_HUMANIZER_PASSWORD")
-        }
+    secrets = {}
     
-    # Set environment variables
+    # First try loading from .env file
+    load_dotenv()
+    
+    # Define required secrets
+    required_secrets = {
+        "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY"),
+        "OPENAI_BASE_URL": os.getenv("OPENAI_BASE_URL", "https://api.ai.it.cornell.edu/"),
+        "PINECONE_API_KEY": os.getenv("PINECONE_API_KEY"),
+        "PINECONE_ENV": os.getenv("PINECONE_ENV", "us-east1-gcp"),
+        "PINECONE_INDEX_NAME": os.getenv("PINECONE_INDEX_NAME", "cornell-ai-hackathon-2025"),
+        "AI_HUMANIZER_EMAIL": os.getenv("AI_HUMANIZER_EMAIL"),
+        "AI_HUMANIZER_PASSWORD": os.getenv("AI_HUMANIZER_PASSWORD")
+    }
+    
+    # Try to get values from Streamlit secrets if available
+    try:
+        for key in required_secrets:
+            # Try Streamlit secrets first, then fall back to environment variable
+            secrets[key] = st.secrets.get(key, required_secrets[key])
+    except Exception:
+        # If Streamlit secrets fail, use the environment variables we loaded
+        secrets = required_secrets
+    
+    # Set environment variables and validate
+    missing_secrets = []
     for key, value in secrets.items():
         if value:
             os.environ[key] = value
         else:
-            st.error(f"Missing required secret: {key}")
-            st.stop()
+            missing_secrets.append(key)
+    
+    if missing_secrets:
+        st.error("⚠️ Missing required secrets:")
+        for key in missing_secrets:
+            st.error(f"- {key}")
+        st.info("Please make sure these secrets are set in .streamlit/secrets.toml or as environment variables.")
+        st.stop()
 
 # Load secrets at startup
 load_secrets()
