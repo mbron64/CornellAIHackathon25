@@ -24,6 +24,36 @@ import json
 import pandas as pd
 import time
 
+# Custom styling for narrower sidebar
+st.markdown("""
+<style>
+    [data-testid="stSidebar"] {
+        width: 100px !important;
+    }
+    .stButton button {
+        width: 100%;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# Add sidebar with New Chat button
+with st.sidebar:
+    if st.button("🔄 New Chat"):
+        # Clear all session state except secrets
+        secrets_backup = {}
+        if 'secrets' in st.session_state:
+            secrets_backup = st.session_state.secrets
+            
+        # Clear the resource cache to force retraining
+        st.cache_resource.clear()
+        
+        st.session_state.clear()
+        
+        if secrets_backup:
+            st.session_state.secrets = secrets_backup
+            
+        st.rerun()
+
 # Load environment variables and secrets
 def load_secrets():
     """Load secrets from Streamlit secrets with proper section handling"""
@@ -178,8 +208,19 @@ def format_docs(docs: Sequence[Any]) -> List[Document]:
     except Exception as e:
         raise ValueError(f"Document formatting failed: {str(e)}")
 
-@st.cache_resource
+@st.cache_resource(show_spinner=False)
 def initialize_system():
+    # Create a cache key based on the documents being used
+    if st.session_state.get("use_uploaded_docs", False) and "uploaded_documents" in st.session_state:
+        # For uploaded documents, use their names and sizes as cache key
+        cache_key = tuple((doc.name, doc.size) for doc in st.session_state.uploaded_documents)
+    else:
+        # For default documents, use a timestamp to force retraining
+        cache_key = time.time()
+    
+    # Add the cache key as a hash to the function's cache
+    st.session_state["cache_key"] = cache_key
+    
     progress_text = st.empty()
     progress_bar = st.progress(0)
     
