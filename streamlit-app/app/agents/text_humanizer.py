@@ -8,19 +8,26 @@ class TextHumanizer:
         self.email = os.getenv("AI_HUMANIZER_EMAIL")
         self.password = os.getenv("AI_HUMANIZER_PASSWORD")
         self.max_chunk_size = 2000  # Maximum size for API request
-        self.min_chunk_size = 500   # Minimum size for each chunk
+        self.min_chunk_size = 1000  # Minimum size for splitting
         
         if not self.email or not self.password:
             raise ValueError("AI_HUMANIZER_EMAIL and AI_HUMANIZER_PASSWORD environment variables must be set")
     
     def _split_text(self, text: str) -> list[str]:
-        """Split text into chunks at sentence boundaries, ensuring minimum chunk size."""
+        """Split text into chunks, preserving context and meaning.
+        
+        For texts under 1000 characters, returns the entire text as a single chunk.
+        For longer texts, splits into chunks of at least 500 words at sentence boundaries.
+        """
+        # If text is under min_chunk_size, return as single chunk
         if len(text) < self.min_chunk_size:
             return [text]
             
         chunks = []
         sentences = text.replace("\n", " ").split(". ")
         current_chunk = ""
+        current_word_count = 0
+        min_words_per_chunk = 500  # Minimum words per chunk for longer texts
         
         for sentence in sentences:
             if not sentence.strip():
@@ -28,27 +35,28 @@ class TextHumanizer:
             
             # Add period back if it was removed by split
             sentence = sentence + "." if not sentence.endswith(".") else sentence
+            sentence_word_count = len(sentence.split())
             
             # Always add sentence to current chunk first
             new_chunk = current_chunk + (" " + sentence if current_chunk else sentence)
+            new_word_count = current_word_count + sentence_word_count
             
-            # If adding this sentence exceeds max size, store current chunk and start new one
-            if len(new_chunk) > self.max_chunk_size and len(current_chunk) >= self.min_chunk_size:
+            # If adding this sentence exceeds max size AND we have enough words, store current chunk
+            if len(new_chunk) > self.max_chunk_size and current_word_count >= min_words_per_chunk:
                 chunks.append(current_chunk.strip())
                 current_chunk = sentence
+                current_word_count = sentence_word_count
             else:
                 # Keep building current chunk
                 current_chunk = new_chunk
+                current_word_count = new_word_count
         
         # Handle the last chunk
         if current_chunk:
-            if len(current_chunk) >= self.min_chunk_size:
-                chunks.append(current_chunk.strip())
-            elif chunks:
+            if chunks and current_word_count < min_words_per_chunk:
                 # If last chunk is too small, append to previous chunk
                 chunks[-1] = chunks[-1] + " " + current_chunk
             else:
-                # If it's the only chunk, keep it
                 chunks.append(current_chunk.strip())
         
         return chunks
