@@ -24,8 +24,43 @@ import json
 import pandas as pd
 import time
 
-# Load environment variables
-load_dotenv()
+# Load environment variables and secrets
+def load_secrets():
+    """Load secrets from Streamlit secrets or environment variables"""
+    try:
+        # Try to load from Streamlit secrets
+        secrets = {
+            "OPENAI_API_KEY": st.secrets["OPENAI_API_KEY"],
+            "OPENAI_BASE_URL": st.secrets["OPENAI_BASE_URL"],
+            "PINECONE_API_KEY": st.secrets["PINECONE_API_KEY"],
+            "PINECONE_ENV": st.secrets["PINECONE_ENV"],
+            "PINECONE_INDEX_NAME": st.secrets["PINECONE_INDEX_NAME"],
+            "AI_HUMANIZER_EMAIL": st.secrets["AI_HUMANIZER_EMAIL"],
+            "AI_HUMANIZER_PASSWORD": st.secrets["AI_HUMANIZER_PASSWORD"]
+        }
+    except (FileNotFoundError, KeyError):
+        # If Streamlit secrets fail, try loading from .env
+        load_dotenv()
+        secrets = {
+            "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY"),
+            "OPENAI_BASE_URL": os.getenv("OPENAI_BASE_URL"),
+            "PINECONE_API_KEY": os.getenv("PINECONE_API_KEY"),
+            "PINECONE_ENV": os.getenv("PINECONE_ENV"),
+            "PINECONE_INDEX_NAME": os.getenv("PINECONE_INDEX_NAME"),
+            "AI_HUMANIZER_EMAIL": os.getenv("AI_HUMANIZER_EMAIL"),
+            "AI_HUMANIZER_PASSWORD": os.getenv("AI_HUMANIZER_PASSWORD")
+        }
+    
+    # Set environment variables
+    for key, value in secrets.items():
+        if value:
+            os.environ[key] = value
+        else:
+            st.error(f"Missing required secret: {key}")
+            st.stop()
+
+# Load secrets at startup
+load_secrets()
 
 # Display welcome message and app description
 st.title("@lpha.mail")
@@ -273,7 +308,7 @@ if st.session_state.get("run_system"):
         st.markdown(style_patterns["style_guide"])
 
     # Display chat messages from history on app rerun
-    for i, message in enumerate(st.session_state.messages):
+    for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
@@ -296,7 +331,7 @@ if st.session_state.get("run_system"):
                 with st.spinner("🎨 Making the text more natural..."):
                     response_text = text_humanizer.humanize(response_text)
                 
-                # Display the humanized response
+                # Display the final response
                 st.markdown(response_text)
                 st.session_state.messages.append({"role": "assistant", "content": response_text})
                 

@@ -56,6 +56,10 @@ class TextHumanizer:
     def _humanize_chunk(self, chunk: str) -> str:
         """Humanize a single chunk of text."""
         try:
+            # If text is too short, return it as is
+            if len(chunk.strip()) < 50:  # Don't process very short texts
+                return chunk
+                
             payload = {
                 'email': self.email,
                 'pw': self.password,
@@ -70,7 +74,13 @@ class TextHumanizer:
             
             response.raise_for_status()
             
-            if not response.text or "out of credits" in response.text.lower():
+            # If response contains error message or is empty, return original text
+            if not response.text or \
+               "out of credits" in response.text.lower() or \
+               "cannot make any improvements" in response.text.lower() or \
+               "need more text" in response.text.lower() or \
+               response.text.startswith("[Note:") or \
+               len(response.text) < len(chunk) * 0.5:  # Response suspiciously short
                 return chunk
             
             return response.text
@@ -90,9 +100,9 @@ class TextHumanizer:
             str: The humanized text
         """
         try:
-            # If text is shorter than minimum chunk size, process it as is
-            if len(text) < self.min_chunk_size:
-                return self._humanize_chunk(text)
+            # If text is too short, return it as is
+            if len(text.strip()) < 50:  # Don't process very short texts
+                return text
             
             # Split text into paragraphs
             paragraphs = text.split("\n")
@@ -118,6 +128,12 @@ class TextHumanizer:
             
             # Combine paragraphs with original formatting
             result = "\n".join(humanized_paragraphs)
+            
+            # Final check - if result looks like an error message, return original
+            if result.startswith("[Note:") or \
+               "cannot make any improvements" in result.lower() or \
+               "need more text" in result.lower():
+                return text
             
             return result
             
