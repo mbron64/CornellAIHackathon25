@@ -13,3 +13,4 @@ scikit-learn
 pandas
 faiss-cpu
 pinecone-client
+langchain-pinecone
