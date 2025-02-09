@@ -21,6 +21,7 @@ from typing import List, Dict, Any, Sequence, Union, Optional
 from langchain_core.documents import Document
 import json
 import pandas as pd
+from IPython.display import Image, display
 
 # Load environment variables
 load_dotenv()
@@ -89,12 +90,18 @@ with st.expander("View LangChain Workflow", expanded=True):
     workflow = create_workflow_graph()
     mermaid_syntax = workflow.get_graph().draw_mermaid()
     
-    # Display using Streamlit's Mermaid component
-    st.markdown(f"""
-    ```mermaid
-    {mermaid_syntax}
-    ```
-    """)
+    # Generate and display the workflow image
+    try:
+        graph_image = workflow.get_graph().draw_mermaid_png()
+        st.image(graph_image, caption="LangChain Workflow Visualization", use_column_width=True)
+    except Exception as e:
+        # Fallback to Mermaid syntax if image generation fails
+        st.markdown(f"""
+        ```mermaid
+        {mermaid_syntax}
+        ```
+        """)
+        st.warning("Fallback to Mermaid diagram due to image generation error.")
     
     st.markdown("""
     ### Workflow Components
@@ -340,37 +347,39 @@ if prompt := st.chat_input("What would you like me to write about?"):
                     - The chart shows how strongly each characteristic appears in the text
                     """)
                     
-                    # Create a DataFrame with labeled dimensions
+                    # Create a DataFrame with full labels, using newlines for wrapping
                     style_characteristics = {
-                        0: "Academic Formality (word choice, technical terms)",
-                        1: "Personal Voice (first-person perspective, emotional tone)",
-                        2: "Structural Complexity (sentence length, paragraph organization)",
-                        3: "Argumentative Style (evidence use, logical flow)",
-                        4: "Descriptive Detail (specificity, examples)",
-                        5: "Narrative Flow (transitions, pacing)",
-                        6: "Technical Depth (subject-specific terminology)",
-                        7: "Rhetorical Devices (metaphors, analogies)",
-                        8: "Engagement Level (reader interaction)",
-                        9: "Analytical Depth (critical analysis)"
+                        0: "Academic Formality\n(word choice, technical terms)",
+                        1: "Personal Voice\n(first-person, emotional tone)",
+                        2: "Structural Complexity\n(sentence length, organization)",
+                        3: "Argumentative Style\n(evidence use, logical flow)",
+                        4: "Descriptive Detail\n(specificity, examples)",
+                        5: "Narrative Flow\n(transitions, pacing)",
+                        6: "Technical Depth\n(subject terminology)",
+                        7: "Rhetorical Devices\n(metaphors, analogies)",
+                        8: "Engagement Level\n(reader interaction)",
+                        9: "Analytical Depth\n(critical analysis)"
                     }
                     
                     dimensions_df = pd.DataFrame(
                         style_patterns["style_dimensions"],
-                        columns=[f"{style_characteristics[i]} ({var:.1%})" 
+                        columns=[f"{style_characteristics[i]}\n({var:.1%})" 
                                 for i, var in enumerate(style_patterns["style_variations"]["variance_explained"])]
                     )
-                    st.line_chart(dimensions_df)
                     
-                    # Show the principal components interpretation
-                    st.markdown("### Style Characteristics Explained")
+                    # Display the chart with increased height for wrapped labels
+                    st.line_chart(dimensions_df, height=500)
+                    
+                    # Show detailed interpretations for top dimensions
+                    st.markdown("### Top Style Characteristics Explained")
                     components = style_patterns["style_variations"]["principal_components"]
-                    for i, component in enumerate(components[:5]):  # Show top 5 most important dimensions
+                    for i, component in enumerate(components[:5]):
                         var_explained = style_patterns["style_variations"]["variance_explained"][i]
                         st.markdown(f"""
-                        **{style_characteristics[i]}** ({var_explained:.1%} of style variation):
+                        **{style_characteristics[i].replace('\n', ' ')}** ({var_explained:.1%} of style variation):
                         - High values: More formal/complex/detailed writing in this aspect
                         - Low values: More casual/simple/direct writing in this aspect
-                        - This characteristic helps match the sample documents' style in terms of {style_characteristics[i].lower()}
+                        - This characteristic helps match the sample documents' style in terms of {style_characteristics[i].lower().replace('\n', ' ')}
                         """)
                     
                     # Show chain operation details
