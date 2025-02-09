@@ -1,4 +1,4 @@
-print("Running updated version")
+print("🚀 Starting AI Style Learning & Writing Assistant")
 import streamlit as st
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain.chains import RetrievalQA
@@ -8,6 +8,7 @@ from pathlib import Path
 from agents.document_processor import DocumentProcessor
 from agents.vector_store import VectorStoreManager
 from agents.style_analyzer import StyleAnalyzer
+from agents.text_humanizer import TextHumanizer
 from agents.llm_manager import LLMManager
 import traceback
 from langchain.chains import LLMChain
@@ -21,10 +22,58 @@ from typing import List, Dict, Any, Sequence, Union, Optional
 from langchain_core.documents import Document
 import json
 import pandas as pd
-from IPython.display import Image, display
+import time
 
 # Load environment variables
 load_dotenv()
+
+# Display welcome message and app description
+st.title("@lpha.mail")
+st.markdown("""
+Welcome to your personal writing style assistant! This AI system will:
+- 📚 Learn from your sample documents
+- 🎯 Analyze your unique writing style
+- ✍️ Generate new content matching your style
+""")
+
+# Add document selection section
+st.markdown("### 📄 Document Selection")
+
+# Document selection and training initialization
+col1, col2 = st.columns(2)
+with col1:
+    if st.button("🔄 Use Default Documents", type="secondary"):
+        st.session_state.clear()
+        st.session_state["use_default_docs"] = True
+        st.session_state["documents_selected"] = True
+
+with col2:
+    if st.button("📚 Use Uploaded Documents", type="secondary"):
+        st.session_state.clear()
+        st.session_state["show_uploader"] = True
+
+# Show file uploader only after clicking "Use Uploaded Documents"
+if st.session_state.get("show_uploader"):
+    uploaded_files = st.file_uploader(
+        "📚 Upload Documents",
+        accept_multiple_files=True,
+        type=['pdf', 'txt', 'docx'],
+        label_visibility="collapsed",
+        key="document_uploader"
+    )
+    
+    if uploaded_files:
+        if not st.session_state.get("run_system"):
+            st.success(f"✅ {len(uploaded_files)} document(s) uploaded successfully!")
+        st.session_state.uploaded_documents = uploaded_files
+        st.session_state["use_uploaded_docs"] = True
+        st.session_state["documents_selected"] = True
+
+# Add run system button
+if st.session_state.get("documents_selected"):
+    if st.button("🚀 Run", type="primary"):
+        st.session_state["run_system"] = True
+        st.rerun()
 
 def create_document(content: Union[str, Dict, Any], metadata: Optional[Dict] = None) -> Document:
     """Create a Document object with proper error handling."""
@@ -48,80 +97,6 @@ def format_docs(docs: Sequence[Any]) -> List[Document]:
     except Exception as e:
         raise ValueError(f"Document formatting failed: {str(e)}")
 
-st.title("AI Style Learning & Writing Assistant")
-
-# Create detailed workflow visualization using LangGraph
-def create_workflow_graph():
-    # Define the state type
-    class State(dict):
-        messages: list
-        style_guide: str
-        context: str
-
-    # Create the graph
-    workflow = StateGraph(State)
-    
-    # Add nodes
-    workflow.add_node("input", lambda x: {"messages": ["User Query"]})
-    workflow.add_node("retriever", lambda x: {"messages": ["Document Retrieval"]})
-    workflow.add_node("vectorstore", lambda x: {"messages": ["Vector Search"]})
-    workflow.add_node("style_analyzer", lambda x: {"messages": ["Style Analysis"]})
-    workflow.add_node("llm", lambda x: {"messages": ["Response Generation"]})
-    workflow.add_node("style_guide_node", lambda x: {"messages": ["Style Guide Creation"]})
-    workflow.add_node("style_prompt", lambda x: {"messages": ["Style-Aware Prompting"]})
-    workflow.add_node("output", lambda x: {"messages": ["Style-Matched Response"]})
-    
-    # Add edges
-    workflow.add_edge(START, "input")
-    workflow.add_edge("input", "retriever")
-    workflow.add_edge("retriever", "vectorstore")
-    workflow.add_edge("vectorstore", "style_analyzer")
-    workflow.add_edge("style_analyzer", "style_guide_node")
-    workflow.add_edge("style_guide_node", "style_prompt")
-    workflow.add_edge("style_prompt", "llm")
-    workflow.add_edge("llm", "output")
-    workflow.add_edge("output", END)
-    
-    return workflow.compile()
-
-# Display workflow visualization
-with st.expander("View LangChain Workflow", expanded=True):
-    # Get the graph and convert to Mermaid syntax
-    workflow = create_workflow_graph()
-    mermaid_syntax = workflow.get_graph().draw_mermaid()
-    
-    # Generate and display the workflow image
-    try:
-        graph_image = workflow.get_graph().draw_mermaid_png()
-        st.image(graph_image, caption="LangChain Workflow Visualization", use_column_width=True)
-    except Exception as e:
-        # Fallback to Mermaid syntax if image generation fails
-        st.markdown(f"""
-        ```mermaid
-        {mermaid_syntax}
-        ```
-        """)
-        st.warning("Fallback to Mermaid diagram due to image generation error.")
-    
-    st.markdown("""
-    ### Workflow Components
-    
-    #### Document Processing
-    - **Sample Documents**: Source materials for style learning
-    - **Document Chunks**: Split documents for processing
-    - **Titan Embeddings**: Convert text to vectors
-    
-    #### Style Learning
-    - **Style Analyzer**: Extract writing patterns
-    - **Style Guide**: Comprehensive style rules
-    - **Style-Aware Prompt**: Template for response generation
-    
-    #### Generation
-    - **Document Retriever**: Find relevant content
-    - **Vector Store**: Semantic search database
-    - **Claude 3 Haiku**: Generate styled responses
-    """)
-
 @st.cache_resource
 def initialize_system():
     progress_text = st.empty()
@@ -133,16 +108,15 @@ def initialize_system():
 
     try:
         update_progress("Checking environment variables...", 0.1)
-        required_vars = ["OPENAI_API_KEY", "OPENAI_BASE_URL", "PINECONE_API_KEY"]
+        required_vars = ["OPENAI_API_KEY", "OPENAI_BASE_URL", "PINECONE_API_KEY", 
+                        "AI_HUMANIZER_EMAIL", "AI_HUMANIZER_PASSWORD"]
         missing_vars = [var for var in required_vars if not os.getenv(var)]
         if missing_vars:
             raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
         update_progress("Initializing document processor...", 0.2)
         docs_path = Path(__file__).parent.parent.parent / 'back-end' / 'email_generator' / 'samples'
-        if not docs_path.exists():
-            raise ValueError(f"Documents path not found: {docs_path}")
-
+        
         llm = ChatOpenAI(
             api_key=os.getenv("OPENAI_API_KEY"),
             base_url=os.getenv("OPENAI_BASE_URL"),
@@ -163,7 +137,18 @@ def initialize_system():
         )
 
         update_progress("Loading and processing documents...", 0.5)
-        texts = doc_processor.load_and_split()
+        # Check which documents to use
+        if st.session_state.get("use_uploaded_docs", False) and "uploaded_documents" in st.session_state:
+            update_progress("Processing uploaded documents...", 0.5)
+            texts = doc_processor.process_uploaded_files(st.session_state.uploaded_documents)
+            if not texts:
+                st.error("No content could be extracted from uploaded documents.")
+                st.stop()
+        else:
+            if not docs_path.exists():
+                raise ValueError(f"Documents path not found: {docs_path}")
+            texts = doc_processor.load_and_split()
+            
         if not texts:
             raise ValueError("No documents found to process")
 
@@ -174,6 +159,9 @@ def initialize_system():
         
         update_progress("Initializing style analyzer...", 0.7)
         style_analyzer = StyleAnalyzer(llm)
+        
+        update_progress("Initializing text humanizer...", 0.75)
+        text_humanizer = TextHumanizer()
         
         update_progress("Learning writing style from samples...", 0.8)
         style_patterns = style_analyzer.learn_style_from_samples([doc.page_content for doc in texts])
@@ -254,7 +242,8 @@ def initialize_system():
                 raise
 
         update_progress("✅ System initialized successfully!", 1.0)
-        return qa_chain_with_style, style_analyzer, style_patterns
+        progress_text.empty()
+        return qa_chain_with_style, style_analyzer, style_patterns, text_humanizer
 
     except Exception as e:
         error_msg = f"❌ Error during initialization: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
@@ -262,68 +251,52 @@ def initialize_system():
         raise e
 
 # Initialize system with error handling
-try:
-    with st.spinner('Initializing system...'):
-        qa_chain_with_style, style_analyzer, style_patterns = initialize_system()
-        st.success("✅ System initialized successfully!")
-except Exception as e:
-    st.error("Failed to initialize system. Please check the error message above.")
-    st.stop()
+if st.session_state.get("run_system"):
+    try:
+        qa_chain_with_style, style_analyzer, style_patterns, text_humanizer = initialize_system()
+    except Exception as e:
+        st.error("Failed to initialize system. Please check the error message above.")
+        st.stop()
 
-# Initialize session state
-if "chain_calls" not in st.session_state:
-    st.session_state.chain_calls = 0
-if "chain_history" not in st.session_state:
-    st.session_state.chain_history = []
+    # Initialize session state
+    if "chain_calls" not in st.session_state:
+        st.session_state.chain_calls = 0
+    if "chain_history" not in st.session_state:
+        st.session_state.chain_history = []
 
-# Display system metrics
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.metric("Total Queries", st.session_state.chain_calls)
-with col2:
-    avg_response_len = 0
-    if st.session_state.chain_history:
-        avg_response_len = sum(c["response_length"] for c in st.session_state.chain_history) / len(st.session_state.chain_history)
-    st.metric("Avg Response Length", f"{avg_response_len:.0f} chars")
-with col3:
-    if st.session_state.chain_history:
-        avg_docs = sum(c["num_source_docs"] for c in st.session_state.chain_history) / len(st.session_state.chain_history)
-        st.metric("Avg Source Docs", f"{avg_docs:.1f}")
+    # Initialize chat history
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
 
-# Initialize chat history
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+    # Display style guide
+    with st.expander("View Learned Writing Style Guide"):
+        st.markdown(style_patterns["style_guide"])
 
-# Display style guide
-with st.expander("View Learned Writing Style Guide"):
-    st.markdown(style_patterns["style_guide"])
+    # Display chat messages from history on app rerun
+    for i, message in enumerate(st.session_state.messages):
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
 
-# Display chain history
-with st.expander("View Chain Operation History"):
-    if st.session_state.chain_history:
-        st.json(st.session_state.chain_history)
-    else:
-        st.info("No chain operations recorded yet.")
-
-# Display chat messages from history on app rerun
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-
-# Accept user input
-if prompt := st.chat_input("What would you like me to write about?"):
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
-    
-    with st.chat_message("assistant"):
-        try:
-            with st.spinner('Generating style-matched response...'):
-                # Generate response using the wrapped QA chain
-                response = qa_chain_with_style(prompt)
-                response_text = response["answer"]
-                source_docs = response.get("source_documents", [])
+    # Accept user input
+    if prompt := st.chat_input("What would you like me to write about?"):
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        
+        with st.chat_message("assistant"):
+            try:
+                # Show loading message while generating
+                with st.spinner("✍️ Crafting in your style"):
+                    # Generate response using the wrapped QA chain
+                    response = qa_chain_with_style(prompt)
+                    response_text = response["answer"]
+                    source_docs = response.get("source_documents", [])
                 
+                # Automatically humanize the response
+                with st.spinner("🎨 Making the text more natural..."):
+                    response_text = text_humanizer.humanize(response_text)
+                
+                # Display the humanized response
                 st.markdown(response_text)
                 st.session_state.messages.append({"role": "assistant", "content": response_text})
                 
@@ -367,8 +340,22 @@ if prompt := st.chat_input("What would you like me to write about?"):
                                 for i, var in enumerate(style_patterns["style_variations"]["variance_explained"])]
                     )
                     
-                    # Display the chart with increased height for wrapped labels
-                    st.line_chart(dimensions_df, height=500)
+                    # Add index labels for text segments
+                    dimensions_df.index = [f"Segment {i+1}" for i in range(len(dimensions_df))]
+                    
+                    # Display the chart with increased height and axis labels
+                    st.markdown("#### Style Characteristics Across Text Segments")
+                    chart = st.line_chart(
+                        dimensions_df,
+                        height=500,
+                        use_container_width=True
+                    )
+                    
+                    # Add axis labels explanation
+                    st.caption("""
+                    **X-axis**: Text segments from the analyzed documents
+                    **Y-axis**: Strength of each style characteristic (higher values indicate stronger presence)
+                    """)
                     
                     # Show detailed interpretations for top dimensions
                     st.markdown("### Top Style Characteristics Explained")
@@ -382,9 +369,11 @@ if prompt := st.chat_input("What would you like me to write about?"):
                         - This characteristic helps match the sample documents' style in terms of {style_characteristics[i].lower().replace('\n', ' ')}
                         """)
                     
-                    # Show chain operation details
-                    st.markdown("### Chain Operation Details")
-                    st.json(st.session_state.chain_history[-1])
-        except Exception as e:
-            st.error(f"Error generating response: {str(e)}")
-            st.error(traceback.format_exc())
+            except Exception as e:
+                st.error(f"Error generating response: {str(e)}")
+                st.error(traceback.format_exc())
+else:
+    if st.session_state.get("documents_selected"):
+        st.info("Click 'Run' to start processing your selected documents 👆")
+    else:
+        st.info("Select a document source above to begin 👆")

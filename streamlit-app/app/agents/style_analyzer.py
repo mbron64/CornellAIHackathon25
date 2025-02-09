@@ -68,6 +68,22 @@ class StyleAnalyzer:
 - Use of lists, quotes, or other formatting
 - Topic progression and development
 
+6. Common Errors and Quirks:
+- Recurring grammatical patterns (even if incorrect)
+- Consistent spelling variations or mistakes
+- Punctuation habits and errors
+- Run-on sentences or fragments
+- Word choice inconsistencies
+
+7. Writing Improvement Areas:
+- Grammar and syntax errors
+- Sentence structure issues
+- Clarity and conciseness problems
+- Redundancy patterns
+- Awkward phrasings
+- Tense consistency issues
+- Common spelling mistakes
+
 Text Segments:
 {text}
 
@@ -77,6 +93,7 @@ Provide a comprehensive analysis that captures:
 3. Distinctive stylistic markers
 4. Context-dependent style adaptations
 5. Overall writing personality
+6. Recurring errors and improvement areas
 
 Analysis:""",
             input_variables=["text"]
@@ -121,6 +138,15 @@ Create a detailed style guide that includes:
 - Unique stylistic features
 - Signature phrases or patterns
 - Special formatting preferences
+
+7. Error Patterns and Improvements:
+- Common grammatical errors to maintain authenticity
+- Typical sentence structure issues
+- Recurring clarity problems
+- Characteristic spelling mistakes
+- Punctuation patterns and errors
+- Word choice inconsistencies
+- Areas needing improvement while preserving voice
 
 Style Guide:""",
             input_variables=["style_analyses"]
@@ -222,7 +248,7 @@ Style Guide:""",
                 ]
             }
             
-            update_progress("✅ Style analysis complete!")
+            update_progress("✅ Complete!")
             return {
                 "style_dimensions": reduced_dims.tolist(),
                 "style_analyses": style_analyses,
@@ -241,7 +267,7 @@ Style Guide:""",
 
 {style_guide}
 
-Using this style guide as your foundation, respond to the following query while maintaining the exact same writing style, voice, and patterns described in the guide.
+Using this style guide as your foundation, respond to the following query while maintaining the exact same writing style, voice, patterns, and characteristic errors described in the guide.
 
 Context from relevant documents:
 {context}
@@ -255,6 +281,16 @@ Remember to:
 4. Choose vocabulary that aligns with the style
 5. Maintain consistent perspective and voice
 6. Incorporate relevant information from the context
+7. Replicate characteristic writing quirks:
+   - Use similar grammatical patterns (including any common errors)
+   - Maintain typical punctuation habits
+   - Include characteristic spelling variations
+   - Mirror sentence structure tendencies (including fragments or run-ons if present)
+   - Keep consistent error patterns in word choice and usage
+   - Preserve any tense consistency issues
+   - Maintain the same level of clarity/redundancy
+
+Important: The goal is to authentically match the original writing style, including both its strengths and imperfections. Do not try to improve or correct the characteristic errors - they are part of the authentic voice.
 
 Response:""",
             input_variables=["style_guide", "query", "context"]
