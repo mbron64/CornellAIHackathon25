@@ -11,6 +11,7 @@ include = ["thisapp"]
 
 [tool.poetry.dependencies]
 python = "^3.12"
+spacy = "^3.7"
 
 aioboto3 = "^12"
 aiofiles = "^24"
