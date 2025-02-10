@@ -159,7 +159,7 @@ with col1:
         st.session_state["documents_selected"] = True
 
 with col2:
-    if st.button("📚 Upload Documents", type="secondary"):
+    if st.button("📚 Use Uploaded Documents", type="secondary"):
         st.session_state.clear()
         st.session_state["show_uploader"] = True
 
