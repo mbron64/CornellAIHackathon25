@@ -1,6 +1,6 @@
 from typing import List, Dict
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_openai import OpenAIEmbeddings
+from langchain_community.embeddings import BedrockEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
@@ -17,15 +17,17 @@ import streamlit as st
 class StyleAnalyzer:
     def __init__(self, llm):
         self.llm = llm
-        self.embeddings = OpenAIEmbeddings(
-            api_key=os.getenv("OPENAI_API_KEY"),
-            base_url=os.getenv("OPENAI_BASE_URL"),
-            model="amazon.titan-text-embeddings.v2"
+        self.embeddings = BedrockEmbeddings(
+            model_id="amazon.titan-embed-text-v1",
+            region_name=os.getenv("AWS_REGION"),
+            credentials_profile_name=None,  # Use environment variables
+            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY")
         )
         # Use semantic chunking for better style analysis
         self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1500,
-            chunk_overlap=200,
+            chunk_size=1000,  # Adjusted for Bedrock
+            chunk_overlap=100,
             length_function=len,
             separators=["\n\n", "\n", ".", "!", "?", ";"]  # Semantic boundaries
         )

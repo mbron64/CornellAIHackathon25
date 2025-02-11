@@ -1,6 +1,6 @@
 from langchain.agents import Tool, AgentExecutor, LLMSingleActionAgent
 from langchain.prompts import StringPromptTemplate, PromptTemplate
-from langchain_openai.chat_models import ChatOpenAI
+from langchain_community.llms.bedrock import Bedrock
 from langchain.schema import AgentAction, AgentFinish
 from langchain.chains import LLMChain
 from langchain.agents import AgentOutputParser
@@ -8,6 +8,7 @@ from typing import List, Union, ClassVar
 import re
 from .style_matcher import StyleMatcher
 from .style_analyzer import StyleAnalyzer
+import os
 
 class StyleValidatorPrompt(StringPromptTemplate):
     template: ClassVar[str] = """Analyze the writing style match between a response and source documents.
@@ -57,12 +58,17 @@ class StyleValidatorOutputParser(AgentOutputParser):
         return AgentAction(tool=action, tool_input=action_input, log=text)
 
 class StyleValidator:
-    def __init__(self, api_key, base_url):
-        self.llm = ChatOpenAI(
-            temperature=0,
-            api_key=api_key,
-            base_url=base_url,
-            model="anthropic.claude-3-haiku"
+    def __init__(self, region_name=None, aws_access_key_id=None, aws_secret_access_key=None):
+        self.llm = Bedrock(
+            model_id="anthropic.claude-3-haiku-20240307-v1:0",
+            region_name=region_name or os.getenv("AWS_REGION"),
+            credentials_profile_name=None,
+            aws_access_key_id=aws_access_key_id or os.getenv("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=aws_secret_access_key or os.getenv("AWS_SECRET_ACCESS_KEY"),
+            model_kwargs={
+                "temperature": 0,
+                "max_tokens": 2048,
+            }
         )
         self.style_analyzer = StyleAnalyzer(self.llm)
         

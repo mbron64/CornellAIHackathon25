@@ -220,10 +220,10 @@ token = ""
 
 # The preset Streamlit theme that your custom theme inherits from.
 # One of "light" or "dark".
-# base =
+base = "dark"
 
 # Primary accent color for interactive elements.
-# primaryColor =
+primaryColor = "purple"
 
 # Background color for the main content area.
 # backgroundColor =

@@ -207,7 +207,7 @@ def format_docs(docs: Sequence[Any]) -> List[Document]:
         return [create_document(doc) for doc in docs]
     except Exception as e:
         raise ValueError(f"Document formatting failed: {str(e)}")
-
+    
 @st.cache_resource(show_spinner=False)
 def initialize_system():
     # Create a cache key based on the documents being used

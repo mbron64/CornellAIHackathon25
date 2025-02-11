@@ -6,14 +6,17 @@ import streamlit as st
 import PyPDF2
 import docx
 import io
+from langchain_community.llms.bedrock import Bedrock
 
 class DocumentProcessor:
-    def __init__(self, llm, docs_path: Optional[Path] = None):
+    def __init__(self, llm: Bedrock, docs_path: Optional[Path] = None):
+        """Initialize DocumentProcessor with Bedrock LLM."""
         self.llm = llm
         self.docs_path = docs_path
+        # Adjust chunk size for better compatibility with Bedrock models
         self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1500,
-            chunk_overlap=200,
+            chunk_size=1000,  # Smaller chunks for better embedding
+            chunk_overlap=100,
             length_function=len,
             separators=["\n\n", "\n", ".", "!", "?", ";"]
         )
