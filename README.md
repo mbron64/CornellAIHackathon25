@@ -2,11 +2,11 @@
 
 ## Team Members
 
-- Michael Bronikowski
-- Aaron Munford
-- Desmond Kao
-- Roshan Gopal
-- Martin Quiniones
+- Michael Bronikowski (mbron64)
+- Aaron Munford (aaronmunford)
+- Desmond Kao (desmondkao)
+- Roshan Gopal (roshan-gopal)
+- Martin Quinones (martinquinones)
 
 ## Overview
 
