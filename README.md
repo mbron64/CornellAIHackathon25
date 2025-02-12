@@ -1,4 +1,30 @@
-# Cornell AI Hackathon 2025
+# Cornell AI Hackathon 2025 - A personalized AI writing assistant that learns your unique style, replicates your tone, and generates responses undetectable by AI detection systems.
+
+## Team Members
+
+- Michael Bronikowski
+- Aaron Munford
+- Desmond Kao
+- Roshan Gopal
+- Martin Quiniones
+
+## Overview
+
+We built a personalized AI writing assistant that learns your unique style, replicates your tone, and generates responses undetectable by AI detection systems.
+
+## Technologies Used
+
+- Python
+- OpenAI API
+- LangChain
+- LangGraph
+- Amazon Bedrock
+- FastAPI
+- Streamlit
+- Docker
+- Dev Container
+
+## Development Environment
 
 This repository contains a development environment that is provided as an easy starting point for Hackathon participants to use to get off and running.
 
