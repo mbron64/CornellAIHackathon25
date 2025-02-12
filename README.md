@@ -1,4 +1,5 @@
-# Cornell AI Hackathon 2025 - A personalized AI writing assistant that learns your unique style, replicates your tone, and generates responses undetectable by AI detection systems.
+# Cornell AI Hackathon 2025 - Team Vector
+ A personalized AI writing assistant that learns your unique style, replicates your tone, and generates responses undetectable by AI detection systems.
 
 ## Team Members
 
